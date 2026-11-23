@@ -78,7 +78,7 @@ public class AuthService : IAuthService
 
     public async Task<Result<AuthResponse>> LoginAsync(LoginRequest req, CancellationToken ct = default)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == req.Email, ct);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == req.Email || u.Username == req.Email, ct);
         if (user == null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             return Result<AuthResponse>.Failure("Invalid credentials", 401);
         if (!user.IsActive)

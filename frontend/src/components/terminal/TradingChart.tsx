@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   createChart,
   IChartApi,
@@ -11,13 +11,15 @@ import {
 } from 'lightweight-charts';
 import { useMarketStore } from '../../store/useMarketStore';
 import { useTradeStore } from '../../store/useTradeStore';
+import { formatPrice } from '../../utils/formatters';
 import {
   TrendingUp,
   Minus,
   Trash2,
-  Plus,
   BarChart2,
   Percent,
+  MoveVertical,
+  ChevronDown,
 } from 'lucide-react';
 
 const TIMEFRAMES = [
@@ -29,12 +31,24 @@ const TIMEFRAMES = [
   { label: '1D', value: '1d' },
 ];
 
-interface CustomLevel {
+const PRESET_COLORS = [
+  { label: 'Emerald', value: '#0ECB81' },
+  { label: 'Red', value: '#F6465D' },
+  { label: 'Gold', value: '#F0B90B' },
+  { label: 'Cyan', value: '#00D8F6' },
+  { label: 'White', value: '#FFFFFF' },
+];
+
+interface UserLine {
   id: string;
   price: number;
-  type: 'support' | 'resistance' | 'custom';
   color: string;
-  title: string;
+  label: string;
+}
+
+interface FiboState {
+  highPrice: number;
+  lowPrice: number;
 }
 
 export const TradingChart: React.FC = () => {
@@ -45,51 +59,81 @@ export const TradingChart: React.FC = () => {
   const ema20SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const sma50SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
-  const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map());
+  // Map of native price line objects
+  const priceLinesMap = useRef<Map<string, IPriceLine>>(new Map());
 
   const { selectedSymbol, klines, klineInterval, setKlineInterval, tickers } =
     useMarketStore();
   const { positions, openOrders } = useTradeStore();
 
+  const ticker = tickers[selectedSymbol];
+  const currentPrice = ticker?.lastPrice ?? 0;
+
   // Indicators toggle
   const [showEma, setShowEma] = useState(true);
   const [showVolume, setShowVolume] = useState(true);
-  const [showFibo, setShowFibo] = useState(false);
 
-  // User-drawn levels saved per symbol
-  const [userLevels, setUserLevels] = useState<CustomLevel[]>(() => {
+  // User-drawn lines
+  const [lines, setLines] = useState<UserLine[]>(() => {
     try {
-      const saved = localStorage.getItem(`levels_${selectedSymbol}`);
+      const saved = localStorage.getItem(`user_lines_${selectedSymbol}`);
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
   });
 
-  // Modal / Input for adding level manually
-  const [newLevelPrice, setNewLevelPrice] = useState<string>('');
-  const [newLevelType, setNewLevelType] = useState<'support' | 'resistance' | 'custom'>('support');
-  const [showAddLevelModal, setShowAddLevelModal] = useState(false);
+  // Fibonacci Retracement state
+  const [fibo, setFibo] = useState<FiboState | null>(() => {
+    try {
+      const saved = localStorage.getItem(`fibo_${selectedSymbol}`);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
-  const ticker = tickers[selectedSymbol];
-  const currentPrice = ticker?.lastPrice ?? 0;
+  // Active color for new lines
+  const [activeColor, setActiveColor] = useState<string>('#0ECB81');
+  const [showLinesDrawer, setShowLinesDrawer] = useState<boolean>(false);
 
-  // Save levels to localStorage whenever updated
+  // Dragging state
+  const [dragState, setDragState] = useState<{
+    target: 'line' | 'fibo-high' | 'fibo-low';
+    lineId?: string;
+  } | null>(null);
+
+  // Crosshair / Hover price
+  const [cursorPrice, setCursorPrice] = useState<number | null>(null);
+
+  // Save lines to localStorage
   useEffect(() => {
-    localStorage.setItem(`levels_${selectedSymbol}`, JSON.stringify(userLevels));
-  }, [userLevels, selectedSymbol]);
+    localStorage.setItem(`user_lines_${selectedSymbol}`, JSON.stringify(lines));
+  }, [lines, selectedSymbol]);
 
-  // Load levels on symbol change
+  // Save fibo to localStorage
+  useEffect(() => {
+    if (fibo) {
+      localStorage.setItem(`fibo_${selectedSymbol}`, JSON.stringify(fibo));
+    } else {
+      localStorage.removeItem(`fibo_${selectedSymbol}`);
+    }
+  }, [fibo, selectedSymbol]);
+
+  // Load on symbol change
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(`levels_${selectedSymbol}`);
-      setUserLevels(saved ? JSON.parse(saved) : []);
+      const savedLines = localStorage.getItem(`user_lines_${selectedSymbol}`);
+      setLines(savedLines ? JSON.parse(savedLines) : []);
+      const savedFibo = localStorage.getItem(`fibo_${selectedSymbol}`);
+      setFibo(savedFibo ? JSON.parse(savedFibo) : null);
     } catch {
-      setUserLevels([]);
+      setLines([]);
+      setFibo(null);
     }
   }, [selectedSymbol]);
 
-  // Initialize Lightweight Chart with sleek modern Bybit dark theme
+  // Initialize Lightweight Chart
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -97,13 +141,13 @@ export const TradingChart: React.FC = () => {
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
       layout: {
-        background: { color: '#0B0E14' }, // Deep modern slate obsidian
+        background: { color: '#0B0E14' },
         textColor: '#8C96A8',
         fontSize: 11,
         fontFamily: 'Inter, system-ui, sans-serif',
       },
       grid: {
-        vertLines: { color: '#161B26' }, // Crisp high-tech grid
+        vertLines: { color: '#161B26' },
         horzLines: { color: '#161B26' },
       },
       crosshair: {
@@ -111,7 +155,7 @@ export const TradingChart: React.FC = () => {
         vertLine: {
           color: '#3B465C',
           width: 1,
-          style: 3, // Dashed
+          style: 3,
           labelBackgroundColor: '#1C2230',
         },
         horzLine: {
@@ -135,7 +179,6 @@ export const TradingChart: React.FC = () => {
       },
     });
 
-    // Candlestick Series (Neon emerald & punchy crimson)
     const candleSeries = chart.addCandlestickSeries({
       upColor: '#0ECB81',
       downColor: '#F6465D',
@@ -145,7 +188,6 @@ export const TradingChart: React.FC = () => {
       wickDownColor: '#F6465D',
     });
 
-    // Volume Series
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume',
@@ -158,19 +200,28 @@ export const TradingChart: React.FC = () => {
       },
     });
 
-    // EMA 20 & SMA 50 Line Series
     const ema20Series = chart.addLineSeries({
-      color: '#00D8F6', // Neon cyan
+      color: '#00D8F6',
       lineWidth: 2,
       title: 'EMA 20',
       priceScaleId: 'right',
     });
 
     const sma50Series = chart.addLineSeries({
-      color: '#F0B90B', // Amber gold
+      color: '#F0B90B',
       lineWidth: 2,
       title: 'SMA 50',
       priceScaleId: 'right',
+    });
+
+    // Track crosshair price
+    chart.subscribeCrosshairMove((param) => {
+      if (param.point && candleSeries) {
+        const p = candleSeries.coordinateToPrice(param.point.y);
+        if (p !== null) {
+          setCursorPrice(Number(p));
+        }
+      }
     });
 
     chartRef.current = chart;
@@ -179,7 +230,6 @@ export const TradingChart: React.FC = () => {
     ema20SeriesRef.current = ema20Series;
     sma50SeriesRef.current = sma50Series;
 
-    // Resize Observer
     const handleResize = () => {
       if (containerRef.current && chart) {
         chart.applyOptions({
@@ -201,24 +251,17 @@ export const TradingChart: React.FC = () => {
     };
   }, []);
 
-  // Calculate Technical Indicators (EMA 20, SMA 50)
+  // Compute EMA 20 & SMA 50
   const { ema20Data, sma50Data } = useMemo(() => {
     if (!klines || klines.length === 0) return { ema20Data: [], sma50Data: [] };
 
-    // SMA 50
     const sma: LineData[] = [];
     for (let i = 49; i < klines.length; i++) {
       let sum = 0;
-      for (let j = 0; j < 50; j++) {
-        sum += Number(klines[i - j].close);
-      }
-      sma.push({
-        time: klines[i].time as UTCTimestamp,
-        value: sum / 50,
-      });
+      for (let j = 0; j < 50; j++) sum += Number(klines[i - j].close);
+      sma.push({ time: klines[i].time as UTCTimestamp, value: sum / 50 });
     }
 
-    // EMA 20
     const ema: LineData[] = [];
     const k = 2 / (20 + 1);
     if (klines.length >= 20) {
@@ -236,7 +279,7 @@ export const TradingChart: React.FC = () => {
     return { ema20Data: ema, sma50Data: sma };
   }, [klines]);
 
-  // Set historical kline & indicator data
+  // Set historical kline data
   useEffect(() => {
     if (!candleSeriesRef.current || !volumeSeriesRef.current || klines.length === 0)
       return;
@@ -274,7 +317,7 @@ export const TradingChart: React.FC = () => {
     chartRef.current?.timeScale().fitContent();
   }, [klines, showVolume, showEma, ema20Data, sma50Data]);
 
-  // Live update of current candle from ticker ticks
+  // Live ticker tick update
   useEffect(() => {
     const t = tickers[selectedSymbol];
     if (!t || !candleSeriesRef.current || klines.length === 0) return;
@@ -282,179 +325,201 @@ export const TradingChart: React.FC = () => {
     const lastKline = klines[klines.length - 1];
     if (!lastKline) return;
 
-    const price = Number(t.lastPrice);
+    const p = Number(t.lastPrice);
     const updatedCandle: CandlestickData = {
       time: lastKline.time as UTCTimestamp,
       open: Number(lastKline.open),
-      high: Math.max(Number(lastKline.high), price),
-      low: Math.min(Number(lastKline.low), price),
-      close: price,
+      high: Math.max(Number(lastKline.high), p),
+      low: Math.min(Number(lastKline.low), p),
+      close: p,
     };
 
     candleSeriesRef.current.update(updatedCandle);
   }, [tickers, selectedSymbol]);
 
-  // Synchronize All Horizontal Price Lines (Support / Resistance / Fibo / Orders / Positions)
+  // Synchronize all native price lines
   useEffect(() => {
     if (!candleSeriesRef.current) return;
 
-    // Remove old lines
-    priceLinesRef.current.forEach((line) => {
+    // Clear old lines
+    priceLinesMap.current.forEach((line) => {
       try {
         candleSeriesRef.current?.removePriceLine(line);
       } catch {}
     });
-    priceLinesRef.current.clear();
+    priceLinesMap.current.clear();
 
-    // 1. Draw Active Positions Lines
-    const activePositions = positions.filter((p) => p.symbol === selectedSymbol);
-    activePositions.forEach((pos) => {
-      const entryLine = candleSeriesRef.current?.createPriceLine({
-        price: Number(pos.entryPrice),
-        color: '#F0B90B',
-        lineWidth: 2,
-        lineStyle: 2, // Dashed
-        axisLabelVisible: true,
-        title: `Entry (${pos.direction} ${pos.leverage}x)`,
-      });
-      if (entryLine) priceLinesRef.current.set(`pos_entry_${pos.id}`, entryLine);
-
-      if (pos.liquidationPrice > 0) {
-        const liqLine = candleSeriesRef.current?.createPriceLine({
-          price: Number(pos.liquidationPrice),
-          color: '#F6465D',
+    // 1. Open Positions
+    positions
+      .filter((p) => p.symbol === selectedSymbol)
+      .forEach((pos) => {
+        const entryLine = candleSeriesRef.current?.createPriceLine({
+          price: Number(pos.entryPrice),
+          color: '#F0B90B',
           lineWidth: 2,
-          lineStyle: 3, // Dotted
+          lineStyle: 2,
           axisLabelVisible: true,
-          title: `Liq Price`,
+          title: `Entry (${pos.direction} ${pos.leverage}x)`,
         });
-        if (liqLine) priceLinesRef.current.set(`pos_liq_${pos.id}`, liqLine);
-      }
-    });
+        if (entryLine) priceLinesMap.current.set(`pos_${pos.id}`, entryLine);
 
-    // 2. Draw Active Open Orders Lines
-    const activeOrders = openOrders.filter((o) => o.symbol === selectedSymbol && o.price);
-    activeOrders.forEach((ord) => {
-      const ordLine = candleSeriesRef.current?.createPriceLine({
-        price: Number(ord.price),
-        color: ord.side === 'Buy' ? '#0ECB81' : '#F6465D',
-        lineWidth: 1,
-        lineStyle: 2,
-        axisLabelVisible: true,
-        title: `${ord.side} Limit`,
+        if (pos.liquidationPrice > 0) {
+          const liqLine = candleSeriesRef.current?.createPriceLine({
+            price: Number(pos.liquidationPrice),
+            color: '#F6465D',
+            lineWidth: 2,
+            lineStyle: 3,
+            axisLabelVisible: true,
+            title: `Liq Price`,
+          });
+          if (liqLine) priceLinesMap.current.set(`liq_${pos.id}`, liqLine);
+        }
       });
-      if (ordLine) priceLinesRef.current.set(`ord_${ord.id}`, ordLine);
-    });
 
-    // 3. Draw User Custom Support & Resistance Lines
-    userLevels.forEach((level) => {
-      const lvlLine = candleSeriesRef.current?.createPriceLine({
-        price: level.price,
-        color: level.color,
+    // 2. Open Orders
+    openOrders
+      .filter((o) => o.symbol === selectedSymbol && o.price)
+      .forEach((ord) => {
+        const ordLine = candleSeriesRef.current?.createPriceLine({
+          price: Number(ord.price),
+          color: ord.side === 'Buy' ? '#0ECB81' : '#F6465D',
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: `${ord.side} Limit`,
+        });
+        if (ordLine) priceLinesMap.current.set(`ord_${ord.id}`, ordLine);
+      });
+
+    // 3. User-created Lines (Horizontal lines)
+    lines.forEach((l) => {
+      const lineObj = candleSeriesRef.current?.createPriceLine({
+        price: l.price,
+        color: l.color,
         lineWidth: 2,
-        lineStyle: level.type === 'support' ? 0 : 2, // Solid for support, dashed for resistance
+        lineStyle: 0, // Solid
         axisLabelVisible: true,
-        title: level.title,
+        title: `${l.label} ($${formatPrice(l.price)})`,
       });
-      if (lvlLine) priceLinesRef.current.set(`user_lvl_${level.id}`, lvlLine);
+      if (lineObj) priceLinesMap.current.set(`line_${l.id}`, lineObj);
     });
 
-    // 4. Auto Fibonacci Retracement Levels
-    if (showFibo && ticker && ticker.high24h > ticker.low24h) {
-      const high = Number(ticker.high24h);
-      const low = Number(ticker.low24h);
-      const diff = high - low;
-
-      const fibRatios = [
-        { ratio: 0, title: 'Fib 0.0 (High)', color: '#9B51E0' },
-        { ratio: 0.236, title: 'Fib 0.236', color: '#00D8F6' },
-        { ratio: 0.382, title: 'Fib 0.382', color: '#F0B90B' },
-        { ratio: 0.5, title: 'Fib 0.50 (Mid)', color: '#FFFFFF' },
-        { ratio: 0.618, title: 'Fib 0.618 (Golden)', color: '#0ECB81' },
-        { ratio: 0.786, title: 'Fib 0.786', color: '#00D8F6' },
-        { ratio: 1.0, title: 'Fib 1.0 (Low)', color: '#F6465D' },
+    // 4. Fibonacci Retracement Levels
+    if (fibo) {
+      const diff = fibo.highPrice - fibo.lowPrice;
+      const fibLevels = [
+        { ratio: 0.0, label: 'Fib 0.00 (High)', color: '#9B51E0' },
+        { ratio: 0.236, label: 'Fib 0.236', color: '#00D8F6' },
+        { ratio: 0.382, label: 'Fib 0.382', color: '#F0B90B' },
+        { ratio: 0.5, label: 'Fib 0.500', color: '#FFFFFF' },
+        { ratio: 0.618, label: 'Fib 0.618 (Golden)', color: '#0ECB81' },
+        { ratio: 0.786, label: 'Fib 0.786', color: '#00D8F6' },
+        { ratio: 1.0, label: 'Fib 1.00 (Low)', color: '#F6465D' },
       ];
 
-      fibRatios.forEach((fib, idx) => {
-        const fibPrice = high - diff * fib.ratio;
+      fibLevels.forEach((fl, idx) => {
+        const p = fibo.highPrice - diff * fl.ratio;
         const fLine = candleSeriesRef.current?.createPriceLine({
-          price: fibPrice,
-          color: fib.color,
-          lineWidth: fib.ratio === 0.618 ? 2 : 1,
-          lineStyle: 3,
+          price: p,
+          color: fl.color,
+          lineWidth: fl.ratio === 0.618 ? 2 : 1,
+          lineStyle: 3, // Dotted
           axisLabelVisible: true,
-          title: fib.title,
+          title: `${fl.label} $${formatPrice(p)}`,
         });
-        if (fLine) priceLinesRef.current.set(`fib_${idx}`, fLine);
+        if (fLine) priceLinesMap.current.set(`fib_${idx}`, fLine);
       });
     }
-  }, [positions, openOrders, userLevels, showFibo, selectedSymbol, ticker]);
+  }, [positions, openOrders, lines, fibo, selectedSymbol]);
 
-  // Quick action: Add Support at current price - 1%
-  const handleAddSupport = () => {
-    if (currentPrice <= 0) return;
-    const price = Math.round(currentPrice * 0.985 * 100) / 100;
-    const newLvl: CustomLevel = {
+  // Add a new horizontal line at current cursor or price
+  const handleAddLine = () => {
+    const targetPrice = cursorPrice && cursorPrice > 0 ? cursorPrice : currentPrice;
+    if (targetPrice <= 0) return;
+
+    const newLine: UserLine = {
       id: Date.now().toString(),
-      price,
-      type: 'support',
-      color: '#0ECB81',
-      title: `Support $${price}`,
+      price: Math.round(targetPrice * 100) / 100,
+      color: activeColor,
+      label: `Line ${lines.length + 1}`,
     };
-    setUserLevels((prev) => [...prev, newLvl]);
+    setLines((prev) => [...prev, newLine]);
   };
 
-  // Quick action: Add Resistance at current price + 1.5%
-  const handleAddResistance = () => {
-    if (currentPrice <= 0) return;
-    const price = Math.round(currentPrice * 1.015 * 100) / 100;
-    const newLvl: CustomLevel = {
-      id: Date.now().toString(),
-      price,
-      type: 'resistance',
-      color: '#F6465D',
-      title: `Resistance $${price}`,
-    };
-    setUserLevels((prev) => [...prev, newLvl]);
+  // Toggle Fibonacci Retracement
+  const handleToggleFibo = () => {
+    if (fibo) {
+      setFibo(null);
+    } else {
+      // Default to 24h high/low or reasonable spread
+      const high = ticker?.high24h && ticker.high24h > currentPrice
+        ? Number(ticker.high24h)
+        : currentPrice * 1.03;
+      const low = ticker?.low24h && ticker.low24h < currentPrice
+        ? Number(ticker.low24h)
+        : currentPrice * 0.97;
+      setFibo({ highPrice: Math.round(high * 100) / 100, lowPrice: Math.round(low * 100) / 100 });
+    }
   };
 
-  // Manual Add Level Confirm
-  const handleConfirmCustomLevel = () => {
-    const p = Number(newLevelPrice);
-    if (p <= 0) return;
-    const color =
-      newLevelType === 'support'
-        ? '#0ECB81'
-        : newLevelType === 'resistance'
-        ? '#F6465D'
-        : '#F0B90B';
-    const newLvl: CustomLevel = {
-      id: Date.now().toString(),
-      price: p,
-      type: newLevelType,
-      color,
-      title: `${newLevelType.toUpperCase()} $${p}`,
-    };
-    setUserLevels((prev) => [...prev, newLvl]);
-    setNewLevelPrice('');
-    setShowAddLevelModal(false);
+  // Dragging event handlers
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!dragState || !containerRef.current || !candleSeriesRef.current) return;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseY = e.clientY - rect.top;
+      const newPrice = candleSeriesRef.current.coordinateToPrice(mouseY);
+      if (newPrice === null || newPrice <= 0) return;
+
+      const roundedPrice = Math.round(Number(newPrice) * 100) / 100;
+
+      if (dragState.target === 'line' && dragState.lineId) {
+        setLines((prev) =>
+          prev.map((l) =>
+            l.id === dragState.lineId ? { ...l, price: roundedPrice } : l
+          )
+        );
+      } else if (dragState.target === 'fibo-high') {
+        setFibo((prev) => (prev ? { ...prev, highPrice: roundedPrice } : null));
+      } else if (dragState.target === 'fibo-low') {
+        setFibo((prev) => (prev ? { ...prev, lowPrice: roundedPrice } : null));
+      }
+    },
+    [dragState]
+  );
+
+  const handleMouseUp = () => {
+    setDragState(null);
   };
 
-  // Clear all user levels
-  const handleClearLevels = () => {
-    setUserLevels([]);
-    localStorage.removeItem(`levels_${selectedSymbol}`);
+  // Fine tune line price
+  const updateLinePrice = (id: string, delta: number) => {
+    setLines((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, price: Math.round((l.price + delta) * 100) / 100 } : l))
+    );
   };
 
-  // Remove single level
-  const handleRemoveLevel = (id: string) => {
-    setUserLevels((prev) => prev.filter((l) => l.id !== id));
+  const removeLine = (id: string) => {
+    setLines((prev) => prev.filter((l) => l.id !== id));
+  };
+
+  const clearAllLines = () => {
+    setLines([]);
+    setFibo(null);
+    localStorage.removeItem(`user_lines_${selectedSymbol}`);
+    localStorage.removeItem(`fibo_${selectedSymbol}`);
   };
 
   return (
-    <div className="flex flex-col h-full bg-bg-primary select-none w-full">
-      {/* Top Professional Toolbar */}
-      <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-bg-secondary border-b border-border text-xs gap-2">
+    <div
+      className="flex flex-col h-full bg-bg-primary select-none w-full relative"
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
+      {/* Top Pro Toolbar */}
+      <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-bg-secondary border-b border-border text-xs gap-2 z-20">
         {/* Timeframes */}
         <div className="flex items-center space-x-1">
           <span className="text-text-muted mr-1.5 font-medium text-[11px]">Time:</span>
@@ -473,43 +538,65 @@ export const TradingChart: React.FC = () => {
           ))}
         </div>
 
-        {/* Technical Drawing & Indicator Controls */}
+        {/* Drawing & Analysis Tools */}
         <div className="flex items-center space-x-2">
-          {/* Quick Support Line Button */}
+          {/* Add Horizontal Line Tool */}
           <button
-            onClick={handleAddSupport}
-            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-trade-buy/15 hover:bg-trade-buy/25 text-trade-buy border border-trade-buy/30 font-semibold text-[11px] transition-all"
-            title="Add Support Level line"
+            onClick={handleAddLine}
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-bg-card hover:bg-bg-hover text-text-primary border border-border font-semibold text-[11px] transition-all shadow-sm"
+            title="Добавить горизонтальную линию (тяните мышкой)"
           >
-            <Minus className="w-3.5 h-3.5 text-trade-buy stroke-[3]" />
-            <span>+ Support</span>
+            <Minus className="w-3.5 h-3.5 stroke-[3]" style={{ color: activeColor }} />
+            <span>+ Линия</span>
           </button>
 
-          {/* Quick Resistance Line Button */}
-          <button
-            onClick={handleAddResistance}
-            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-trade-sell/15 hover:bg-trade-sell/25 text-trade-sell border border-trade-sell/30 font-semibold text-[11px] transition-all"
-            title="Add Resistance Level line"
-          >
-            <Minus className="w-3.5 h-3.5 text-trade-sell stroke-[3]" />
-            <span>+ Resistance</span>
-          </button>
+          {/* Color selector for lines */}
+          <div className="flex items-center space-x-1 bg-bg-card p-0.5 rounded border border-border">
+            {PRESET_COLORS.map((c) => (
+              <button
+                key={c.value}
+                onClick={() => setActiveColor(c.value)}
+                className={`w-3.5 h-3.5 rounded-full transition-transform ${
+                  activeColor === c.value
+                    ? 'ring-2 ring-white scale-110 shadow-sm'
+                    : 'opacity-60 hover:opacity-100'
+                }`}
+                style={{ backgroundColor: c.value }}
+                title={c.label}
+              />
+            ))}
+          </div>
 
-          {/* Fibonacci Auto Calculator */}
+          {/* Fibonacci Tool */}
           <button
-            onClick={() => setShowFibo(!showFibo)}
-            className={`flex items-center space-x-1 px-2 py-1 rounded font-semibold text-[11px] transition-all ${
-              showFibo
+            onClick={handleToggleFibo}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded font-semibold text-[11px] transition-all ${
+              fibo
                 ? 'bg-accent-gold/20 text-accent-gold border border-accent-gold/50 shadow-sm'
                 : 'bg-bg-card hover:bg-bg-hover text-text-secondary border border-border'
             }`}
-            title="Toggle Fibonacci Retracement"
+            title="Включить сетку Фибоначчи (можно двигать верх и низ мышкой)"
           >
             <Percent className="w-3.5 h-3.5" />
-            <span>Fib Levels</span>
+            <span>Фибоначчи</span>
           </button>
 
-          {/* Indicators Toggle (EMA 20 & SMA 50) */}
+          {/* Active Lines Drawer Toggle */}
+          <button
+            onClick={() => setShowLinesDrawer(!showLinesDrawer)}
+            className={`flex items-center space-x-1 px-2 py-1 rounded font-semibold text-[11px] transition-all ${
+              lines.length > 0 || fibo
+                ? 'bg-bg-panel text-accent-gold border border-border'
+                : 'bg-bg-card text-text-muted hover:text-text-primary border border-border'
+            }`}
+            title="Управление созданными линиями"
+          >
+            <MoveVertical className="w-3.5 h-3.5" />
+            <span>Линии ({lines.length + (fibo ? 1 : 0)})</span>
+            <ChevronDown className={`w-3 h-3 transition-transform ${showLinesDrawer ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* Indicators Toggle */}
           <button
             onClick={() => setShowEma(!showEma)}
             className={`flex items-center space-x-1 px-2 py-1 rounded font-semibold text-[11px] transition-all ${
@@ -522,7 +609,6 @@ export const TradingChart: React.FC = () => {
             <span>EMA/SMA</span>
           </button>
 
-          {/* Volume toggle */}
           <button
             onClick={() => setShowVolume(!showVolume)}
             className={`flex items-center space-x-1 px-2 py-1 rounded font-semibold text-[11px] transition-all ${
@@ -535,22 +621,12 @@ export const TradingChart: React.FC = () => {
             <span>Vol</span>
           </button>
 
-          {/* Custom Level by exact price */}
-          <button
-            onClick={() => setShowAddLevelModal(true)}
-            className="flex items-center space-x-1 px-2 py-1 rounded bg-bg-card hover:bg-bg-hover text-text-secondary border border-border font-semibold text-[11px] transition-all"
-            title="Add custom price level"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Set Level</span>
-          </button>
-
-          {/* Clear all user levels */}
-          {userLevels.length > 0 && (
+          {/* Clear all */}
+          {(lines.length > 0 || fibo) && (
             <button
-              onClick={handleClearLevels}
+              onClick={clearAllLines}
               className="p-1 rounded bg-bg-card hover:bg-trade-sell/20 text-text-muted hover:text-trade-sell border border-border transition-all"
-              title="Clear all drawn levels"
+              title="Очистить все линии и Фибоначчи"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -558,95 +634,126 @@ export const TradingChart: React.FC = () => {
         </div>
       </div>
 
-      {/* Active Drawings Chips Strip (if user created any) */}
-      {userLevels.length > 0 && (
-        <div className="flex items-center space-x-2 px-3 py-1 bg-bg-card border-b border-border overflow-x-auto text-[10px]">
-          <span className="text-text-muted uppercase font-bold shrink-0">Levels:</span>
-          {userLevels.map((lvl) => (
-            <div
-              key={lvl.id}
-              className="flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-bg-panel border border-border shrink-0 tabular-nums font-semibold"
-              style={{ color: lvl.color }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: lvl.color }} />
-              <span>{lvl.title}</span>
-              <button
-                onClick={() => handleRemoveLevel(lvl.id)}
-                className="hover:text-trade-sell ml-1"
+      {/* Interactive Active Lines & Fibonacci Controller Drawer */}
+      {showLinesDrawer && (
+        <div className="absolute top-10 right-4 z-30 w-80 bg-bg-card border border-border rounded-xl p-3 shadow-2xl space-y-2 text-xs">
+          <div className="flex justify-between items-center pb-2 border-b border-border">
+            <span className="font-bold text-text-primary text-[11px] uppercase tracking-wide">
+              Управление линиями графика
+            </span>
+            <span className="text-[10px] text-text-muted">Тяните ползунки или мышь</span>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+            {/* Horizontal Lines Controls */}
+            {lines.map((l) => (
+              <div
+                key={l.id}
+                className="p-2 rounded-lg bg-bg-panel border border-border flex flex-col space-y-1.5"
               >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center space-x-1.5 font-semibold text-text-primary">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: l.color }}
+                    />
+                    <span>{l.label}</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        setDragState({ target: 'line', lineId: l.id });
+                      }}
+                      className="px-2 py-0.5 rounded bg-bg-hover text-accent-gold font-bold text-[10px] cursor-ns-resize hover:bg-accent-gold/20 transition-colors"
+                      title="Зажмите и тяните мышь для перемещения линии"
+                    >
+                      ↕ Двигать
+                    </button>
+                    <button
+                      onClick={() => removeLine(l.id)}
+                      className="text-text-muted hover:text-trade-sell p-0.5"
+                      title="Удалить"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
 
-      {/* Lightweight Chart Canvas Area */}
-      <div ref={containerRef} className="flex-1 w-full relative min-h-[300px]" />
+                <div className="flex items-center justify-between text-xs tabular-nums">
+                  <span className="font-bold text-text-primary">${formatPrice(l.price)}</span>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => updateLinePrice(l.id, -1)}
+                      className="px-1.5 py-0.5 rounded bg-bg-card hover:bg-bg-hover border border-border text-text-secondary"
+                    >
+                      -1$
+                    </button>
+                    <button
+                      onClick={() => updateLinePrice(l.id, 1)}
+                      className="px-1.5 py-0.5 rounded bg-bg-card hover:bg-bg-hover border border-border text-text-secondary"
+                    >
+                      +1$
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
 
-      {/* Modal for setting custom level */}
-      {showAddLevelModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-bg-card border border-border rounded-xl w-full max-w-xs p-4 shadow-2xl">
-            <h3 className="font-bold text-sm text-text-primary mb-3">Add Chart Level</h3>
-            <div className="space-y-3 mb-4 text-xs">
-              <div>
-                <label className="block text-text-muted mb-1 font-medium">Type</label>
-                <div className="grid grid-cols-2 gap-2">
+            {/* Fibonacci Controls */}
+            {fibo && (
+              <div className="p-2 rounded-lg bg-bg-panel border border-accent-gold/30 flex flex-col space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-accent-gold text-[11px]">
+                    Сетка Фибоначчи
+                  </span>
                   <button
-                    type="button"
-                    onClick={() => setNewLevelType('support')}
-                    className={`py-1 rounded font-bold transition-all ${
-                      newLevelType === 'support'
-                        ? 'bg-trade-buy text-white'
-                        : 'bg-bg-panel text-text-secondary border border-border'
-                    }`}
+                    onClick={() => setFibo(null)}
+                    className="text-text-muted hover:text-trade-sell text-xs"
                   >
-                    Support Line
+                    ×
                   </button>
+                </div>
+
+                <div className="flex justify-between items-center text-[11px] tabular-nums">
+                  <span>Верх (100%): <strong className="text-text-primary">${formatPrice(fibo.highPrice)}</strong></span>
                   <button
-                    type="button"
-                    onClick={() => setNewLevelType('resistance')}
-                    className={`py-1 rounded font-bold transition-all ${
-                      newLevelType === 'resistance'
-                        ? 'bg-trade-sell text-white'
-                        : 'bg-bg-panel text-text-secondary border border-border'
-                    }`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setDragState({ target: 'fibo-high' });
+                    }}
+                    className="px-2 py-0.5 rounded bg-accent-gold/20 text-accent-gold font-bold text-[10px] cursor-ns-resize"
                   >
-                    Resistance Line
+                    ↕ Тянуть верх
+                  </button>
+                </div>
+
+                <div className="flex justify-between items-center text-[11px] tabular-nums">
+                  <span>Низ (0%): <strong className="text-text-primary">${formatPrice(fibo.lowPrice)}</strong></span>
+                  <button
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setDragState({ target: 'fibo-low' });
+                    }}
+                    className="px-2 py-0.5 rounded bg-accent-gold/20 text-accent-gold font-bold text-[10px] cursor-ns-resize"
+                  >
+                    ↕ Тянуть низ
                   </button>
                 </div>
               </div>
-              <div>
-                <label className="block text-text-muted mb-1 font-medium">Target Price (USDT)</label>
-                <input
-                  type="number"
-                  step="any"
-                  value={newLevelPrice}
-                  onChange={(e) => setNewLevelPrice(e.target.value)}
-                  placeholder={`e.g. ${currentPrice || 500}`}
-                  className="w-full bg-bg-panel border border-border rounded px-2.5 py-1.5 text-text-primary tabular-nums focus:outline-none focus:border-accent-gold"
-                  autoFocus
-                />
+            )}
+
+            {lines.length === 0 && !fibo && (
+              <div className="text-center py-4 text-text-muted text-xs">
+                Линии ещё не добавлены. Нажмите "+ Линия" или "Фибоначчи".
               </div>
-            </div>
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setShowAddLevelModal(false)}
-                className="flex-1 py-1.5 rounded bg-bg-panel hover:bg-bg-hover text-text-secondary font-medium border border-border text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmCustomLevel}
-                className="flex-1 py-1.5 rounded bg-accent-gold hover:bg-accent-gold-hover text-bg-primary font-bold text-xs shadow"
-              >
-                Plot Level
-              </button>
-            </div>
+            )}
           </div>
         </div>
       )}
+
+      {/* Lightweight Charts Canvas Element */}
+      <div ref={containerRef} className="flex-1 w-full relative min-h-[350px]" />
     </div>
   );
 };

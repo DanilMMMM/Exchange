@@ -25,6 +25,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate }) => {
   const { user, isAuthenticated, logout } = useAuthStore();
   const { wallets, fetchWallets, showToast } = useTradeStore();
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [isToppingUp, setIsToppingUp] = useState(false);
 
   // Calculate total portfolio balance in USDT
@@ -144,17 +145,35 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPage, onNavigate }) => {
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => setAuthModalOpen(true)}
-              className="px-3 py-1.5 rounded bg-accent-gold hover:bg-accent-gold-hover text-bg-primary font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-accent-gold/15"
-            >
-              Log In / Register
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthModalOpen(true);
+                }}
+                className="px-3 py-1.5 rounded bg-bg-panel hover:bg-bg-hover text-text-primary font-semibold text-xs border border-border transition-all"
+              >
+                Войти
+              </button>
+              <button
+                onClick={() => {
+                  setAuthMode('register');
+                  setAuthModalOpen(true);
+                }}
+                className="px-3 py-1.5 rounded bg-accent-gold hover:bg-accent-gold-hover text-bg-primary font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-accent-gold/20"
+              >
+                Регистрация
+              </button>
+            </div>
           )}
         </div>
       </header>
 
-      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+      <AuthModal
+        isOpen={authModalOpen}
+        initialMode={authMode}
+        onClose={() => setAuthModalOpen(false)}
+      />
     </>
   );
 };
