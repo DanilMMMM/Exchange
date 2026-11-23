@@ -10,3 +10,4 @@ public abstract class AuditableEntity : BaseEntity
 {
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
+    
