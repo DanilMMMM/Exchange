@@ -49,7 +49,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ mode }) => {
                 }`}
               >
                 <BookOpen className="w-3.5 h-3.5" />
-                <span>Order Book</span>
+                <span>Книга ордеров</span>
               </button>
               <button
                 onClick={() => setRightTab('trades')}
@@ -60,7 +60,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ mode }) => {
                 }`}
               >
                 <Activity className="w-3.5 h-3.5" />
-                <span>Recent Trades</span>
+                <span>Сделки</span>
               </button>
             </div>
           </div>

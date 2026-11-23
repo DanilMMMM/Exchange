@@ -141,14 +141,14 @@ export const TradingChart: React.FC = () => {
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
       layout: {
-        background: { color: '#0B0E14' },
-        textColor: '#8C96A8',
+        background: { color: '#0E1117' },
+        textColor: '#929AA5',
         fontSize: 11,
         fontFamily: 'Inter, system-ui, sans-serif',
       },
       grid: {
-        vertLines: { color: '#161B26' },
-        horzLines: { color: '#161B26' },
+        vertLines: { color: '#1A1D28' },
+        horzLines: { color: '#1A1D28' },
       },
       crosshair: {
         mode: 1, // Normal
@@ -399,7 +399,7 @@ export const TradingChart: React.FC = () => {
         lineWidth: 2,
         lineStyle: 0, // Solid
         axisLabelVisible: true,
-        title: `${l.label} ($${formatPrice(l.price)})`,
+        title: `$${formatPrice(l.price)}`,
       });
       if (lineObj) priceLinesMap.current.set(`line_${l.id}`, lineObj);
     });
@@ -441,9 +441,10 @@ export const TradingChart: React.FC = () => {
       id: Date.now().toString(),
       price: Math.round(targetPrice * 100) / 100,
       color: activeColor,
-      label: `Line ${lines.length + 1}`,
+      label: `Линия ${lines.length + 1}`,
     };
     setLines((prev) => [...prev, newLine]);
+    setShowLinesDrawer(true);
   };
 
   // Toggle Fibonacci Retracement
@@ -459,8 +460,47 @@ export const TradingChart: React.FC = () => {
         ? Number(ticker.low24h)
         : currentPrice * 0.97;
       setFibo({ highPrice: Math.round(high * 100) / 100, lowPrice: Math.round(low * 100) / 100 });
+      setShowLinesDrawer(true);
     }
   };
+
+  // Window-level dragging event listeners for ultra-smooth drag anywhere on screen
+  useEffect(() => {
+    if (!dragState) return;
+
+    const onWindowMove = (e: MouseEvent) => {
+      if (!containerRef.current || !candleSeriesRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseY = e.clientY - rect.top;
+      const newPrice = candleSeriesRef.current.coordinateToPrice(mouseY);
+      if (newPrice === null || newPrice <= 0) return;
+
+      const roundedPrice = Math.round(Number(newPrice) * 100) / 100;
+
+      if (dragState.target === 'line' && dragState.lineId) {
+        setLines((prev) =>
+          prev.map((l) =>
+            l.id === dragState.lineId ? { ...l, price: roundedPrice } : l
+          )
+        );
+      } else if (dragState.target === 'fibo-high') {
+        setFibo((prev) => (prev ? { ...prev, highPrice: roundedPrice } : null));
+      } else if (dragState.target === 'fibo-low') {
+        setFibo((prev) => (prev ? { ...prev, lowPrice: roundedPrice } : null));
+      }
+    };
+
+    const onWindowUp = () => {
+      setDragState(null);
+    };
+
+    window.addEventListener('mousemove', onWindowMove);
+    window.addEventListener('mouseup', onWindowUp);
+    return () => {
+      window.removeEventListener('mousemove', onWindowMove);
+      window.removeEventListener('mouseup', onWindowUp);
+    };
+  }, [dragState]);
 
   // Dragging event handlers
   const handleMouseMove = useCallback(
@@ -498,6 +538,11 @@ export const TradingChart: React.FC = () => {
     setLines((prev) =>
       prev.map((l) => (l.id === id ? { ...l, price: Math.round((l.price + delta) * 100) / 100 } : l))
     );
+  };
+
+  const setLinePriceDirect = (id: string, price: number) => {
+    if (price <= 0 || isNaN(price)) return;
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, price } : l)));
   };
 
   const removeLine = (id: string) => {
@@ -649,51 +694,73 @@ export const TradingChart: React.FC = () => {
             {lines.map((l) => (
               <div
                 key={l.id}
-                className="p-2 rounded-lg bg-bg-panel border border-border flex flex-col space-y-1.5"
+                className="p-2.5 rounded-lg bg-bg-panel border border-border flex flex-col space-y-2 shadow-sm"
               >
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-1.5 font-semibold text-text-primary">
                     <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
                       style={{ backgroundColor: l.color }}
                     />
                     <span>{l.label}</span>
                   </div>
-                  <div className="flex items-center space-x-1">
+                  <div className="flex items-center space-x-1.5">
                     <button
                       onMouseDown={(e) => {
                         e.stopPropagation();
                         setDragState({ target: 'line', lineId: l.id });
                       }}
-                      className="px-2 py-0.5 rounded bg-bg-hover text-accent-gold font-bold text-[10px] cursor-ns-resize hover:bg-accent-gold/20 transition-colors"
-                      title="Зажмите и тяните мышь для перемещения линии"
+                      className="px-2.5 py-1 rounded bg-accent-gold/20 hover:bg-accent-gold/30 text-accent-gold font-bold text-[11px] cursor-ns-resize transition-colors flex items-center space-x-1 shadow-sm"
+                      title="Зажмите и тяните мышь вверх/вниз в любое место экрана"
                     >
-                      ↕ Двигать
+                      <MoveVertical className="w-3 h-3" />
+                      <span>Двигать мышью</span>
                     </button>
                     <button
                       onClick={() => removeLine(l.id)}
-                      className="text-text-muted hover:text-trade-sell p-0.5"
-                      title="Удалить"
+                      className="text-text-muted hover:text-trade-sell p-1 rounded hover:bg-bg-hover transition-colors font-bold text-sm"
+                      title="Удалить линию"
                     >
                       ×
                     </button>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-xs tabular-nums">
-                  <span className="font-bold text-text-primary">${formatPrice(l.price)}</span>
+                <div className="flex items-center justify-between text-xs tabular-nums gap-2">
+                  <div className="flex items-center space-x-1 bg-bg-card border border-border rounded px-2 py-1">
+                    <span className="text-text-muted text-[10px]">$</span>
+                    <input
+                      type="number"
+                      step="any"
+                      value={l.price}
+                      onChange={(e) => setLinePriceDirect(l.id, parseFloat(e.target.value) || 0)}
+                      className="w-20 bg-transparent text-text-primary font-mono font-bold text-xs focus:outline-none"
+                    />
+                  </div>
                   <div className="flex items-center space-x-1">
                     <button
-                      onClick={() => updateLinePrice(l.id, -1)}
-                      className="px-1.5 py-0.5 rounded bg-bg-card hover:bg-bg-hover border border-border text-text-secondary"
+                      onClick={() => updateLinePrice(l.id, -10)}
+                      className="px-1.5 py-0.5 rounded bg-bg-card hover:bg-bg-hover border border-border text-text-muted hover:text-text-primary text-[10px]"
                     >
-                      -1$
+                      -10
+                    </button>
+                    <button
+                      onClick={() => updateLinePrice(l.id, -1)}
+                      className="px-1.5 py-0.5 rounded bg-bg-card hover:bg-bg-hover border border-border text-text-secondary hover:text-text-primary text-[10px]"
+                    >
+                      -1
                     </button>
                     <button
                       onClick={() => updateLinePrice(l.id, 1)}
-                      className="px-1.5 py-0.5 rounded bg-bg-card hover:bg-bg-hover border border-border text-text-secondary"
+                      className="px-1.5 py-0.5 rounded bg-bg-card hover:bg-bg-hover border border-border text-text-secondary hover:text-text-primary text-[10px]"
                     >
-                      +1$
+                      +1
+                    </button>
+                    <button
+                      onClick={() => updateLinePrice(l.id, 10)}
+                      className="px-1.5 py-0.5 rounded bg-bg-card hover:bg-bg-hover border border-border text-text-muted hover:text-text-primary text-[10px]"
+                    >
+                      +10
                     </button>
                   </div>
                 </div>
@@ -702,42 +769,82 @@ export const TradingChart: React.FC = () => {
 
             {/* Fibonacci Controls */}
             {fibo && (
-              <div className="p-2 rounded-lg bg-bg-panel border border-accent-gold/30 flex flex-col space-y-2">
+              <div className="p-2.5 rounded-lg bg-bg-panel border border-accent-gold/40 flex flex-col space-y-2.5 shadow-sm">
                 <div className="flex justify-between items-center">
-                  <span className="font-bold text-accent-gold text-[11px]">
+                  <span className="font-bold text-accent-gold text-[11px] uppercase tracking-wider flex items-center space-x-1">
+                    <Percent className="w-3.5 h-3.5 mr-1" />
                     Сетка Фибоначчи
                   </span>
                   <button
                     onClick={() => setFibo(null)}
-                    className="text-text-muted hover:text-trade-sell text-xs"
+                    className="text-text-muted hover:text-trade-sell p-1 rounded hover:bg-bg-hover transition-colors font-bold text-sm"
+                    title="Удалить Фибоначчи"
                   >
                     ×
                   </button>
                 </div>
 
-                <div className="flex justify-between items-center text-[11px] tabular-nums">
-                  <span>Верх (100%): <strong className="text-text-primary">${formatPrice(fibo.highPrice)}</strong></span>
+                {/* High Anchor */}
+                <div className="flex justify-between items-center text-[11px] tabular-nums gap-2">
+                  <div className="flex items-center space-x-1">
+                    <span className="text-text-muted">Верх (100%):</span>
+                    <div className="flex items-center space-x-1 bg-bg-card border border-border rounded px-1.5 py-0.5">
+                      <span className="text-text-muted text-[10px]">$</span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={fibo.highPrice}
+                        onChange={(e) =>
+                          setFibo((prev) =>
+                            prev ? { ...prev, highPrice: parseFloat(e.target.value) || 0 } : null
+                          )
+                        }
+                        className="w-18 bg-transparent text-text-primary font-mono font-bold text-xs focus:outline-none"
+                      />
+                    </div>
+                  </div>
                   <button
                     onMouseDown={(e) => {
                       e.stopPropagation();
                       setDragState({ target: 'fibo-high' });
                     }}
-                    className="px-2 py-0.5 rounded bg-accent-gold/20 text-accent-gold font-bold text-[10px] cursor-ns-resize"
+                    className="px-2 py-1 rounded bg-accent-gold/20 hover:bg-accent-gold/30 text-accent-gold font-bold text-[10px] cursor-ns-resize transition-colors flex items-center space-x-0.5 shrink-0"
+                    title="Зажмите и тяните мышь для перемещения верхнего уровня Фибоначчи"
                   >
-                    ↕ Тянуть верх
+                    <MoveVertical className="w-3 h-3" />
+                    <span>Тянуть верх</span>
                   </button>
                 </div>
 
-                <div className="flex justify-between items-center text-[11px] tabular-nums">
-                  <span>Низ (0%): <strong className="text-text-primary">${formatPrice(fibo.lowPrice)}</strong></span>
+                {/* Low Anchor */}
+                <div className="flex justify-between items-center text-[11px] tabular-nums gap-2">
+                  <div className="flex items-center space-x-1">
+                    <span className="text-text-muted">Низ (0%):</span>
+                    <div className="flex items-center space-x-1 bg-bg-card border border-border rounded px-1.5 py-0.5">
+                      <span className="text-text-muted text-[10px]">$</span>
+                      <input
+                        type="number"
+                        step="any"
+                        value={fibo.lowPrice}
+                        onChange={(e) =>
+                          setFibo((prev) =>
+                            prev ? { ...prev, lowPrice: parseFloat(e.target.value) || 0 } : null
+                          )
+                        }
+                        className="w-18 bg-transparent text-text-primary font-mono font-bold text-xs focus:outline-none"
+                      />
+                    </div>
+                  </div>
                   <button
                     onMouseDown={(e) => {
                       e.stopPropagation();
                       setDragState({ target: 'fibo-low' });
                     }}
-                    className="px-2 py-0.5 rounded bg-accent-gold/20 text-accent-gold font-bold text-[10px] cursor-ns-resize"
+                    className="px-2 py-1 rounded bg-accent-gold/20 hover:bg-accent-gold/30 text-accent-gold font-bold text-[10px] cursor-ns-resize transition-colors flex items-center space-x-0.5 shrink-0"
+                    title="Зажмите и тяните мышь для перемещения нижнего уровня Фибоначчи"
                   >
-                    ↕ Тянуть низ
+                    <MoveVertical className="w-3 h-3" />
+                    <span>Тянуть низ</span>
                   </button>
                 </div>
               </div>

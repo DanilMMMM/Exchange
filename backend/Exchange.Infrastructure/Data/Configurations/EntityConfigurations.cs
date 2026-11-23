@@ -208,6 +208,7 @@ public class FuturesPositionConfiguration : IEntityTypeConfiguration<FuturesPosi
         b.Property(x => x.OpenedAt).HasColumnName("opened_at");
         b.Property(x => x.ClosedAt).HasColumnName("closed_at");
         b.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        b.Ignore(x => x.CreatedAt);
         b.HasIndex(x => new { x.UserId, x.Status });
         b.HasOne(x => x.User).WithMany(u => u.Positions).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.TradingPair).WithMany(p => p.Positions).HasForeignKey(x => x.TradingPairId);

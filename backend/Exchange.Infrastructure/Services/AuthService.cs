@@ -156,61 +156,60 @@ public class AuthService : IAuthService
 
     private static void GenerateCryptoAddresses(Guid userId, List<Asset> assets, Asset usdt, AppDbContext db)
     {
-        // EVM address (shared for ETH, BNB, ARB, OP, LINK, UNI, etc.)
-        var evmAddress = "0x" + Convert.ToHexString(RandomNumberGenerator.GetBytes(20)).ToLower();
-        // BTC
-        var btcAddress = "bc1q" + GenerateBase58Chars(38);
-        // TRC20
-        var trcAddress = "T" + GenerateBase58Chars(33);
-        // SOL
-        var solAddress = GenerateBase58Chars(44);
-        // TON
-        var tonAddress = "UQ" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-        var networkMap = new Dictionary<string, (string network, string address)[]>
-        {
-            ["BTC"]    = new[] { ("BTC", btcAddress) },
-            ["ETH"]    = new[] { ("ERC20", evmAddress) },
-            ["SOL"]    = new[] { ("SOL", solAddress) },
-            ["BNB"]    = new[] { ("BEP20", evmAddress) },
-            ["XRP"]    = new[] { ("XRP", "r" + GenerateBase58Chars(33)) },
-            ["TON"]    = new[] { ("TON", tonAddress) },
-            ["DOGE"]   = new[] { ("DOGE", "D" + GenerateBase58Chars(33)) },
-            ["ADA"]    = new[] { ("ADA", "addr1" + GenerateBase58Chars(53)) },
-            ["AVAX"]   = new[] { ("ERC20", evmAddress) },
-            ["LINK"]   = new[] { ("ERC20", evmAddress) },
-            ["DOT"]    = new[] { ("DOT", "1" + GenerateBase58Chars(46)) },
-            ["LTC"]    = new[] { ("LTC", "ltc1" + GenerateBase58Chars(38)) },
-            ["TRX"]    = new[] { ("TRC20", trcAddress) },
-            ["NEAR"]   = new[] { ("NEAR", GenerateBase58Chars(44) + ".near") },
-            ["SUI"]    = new[] { ("SUI", "0x" + Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLower()) },
-            ["ARB"]    = new[] { ("ARB", evmAddress) },
-            ["OP"]     = new[] { ("OP", evmAddress) },
-            ["PEPE"]   = new[] { ("ERC20", evmAddress) },
-            ["UNI"]    = new[] { ("ERC20", evmAddress) },
-            ["ATOM"]   = new[] { ("ATOM", "cosmos1" + GenerateBase58Chars(38)) },
-            ["APT"]    = new[] { ("APT", "0x" + Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLower()) },
-            ["SHIB"]   = new[] { ("ERC20", evmAddress) },
-            ["WIF"]    = new[] { ("SOL", solAddress) },
-            ["RENDER"] = new[] { ("ERC20", evmAddress) },
-            ["NOT"]    = new[] { ("TON", tonAddress) },
-            ["USDT"]   = new[] { ("ERC20", evmAddress), ("TRC20", trcAddress), ("SOL", solAddress) },
-        };
+        string NewEvm() => "0x" + Convert.ToHexString(RandomNumberGenerator.GetBytes(20)).ToLower();
+        string NewBtc() => "bc1q" + GenerateBase58Chars(38);
+        string NewTrc() => "T" + GenerateBase58Chars(33);
+        string NewSol() => GenerateBase58Chars(44);
+        string NewTon() => "UQ" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
         var allAssets = new List<Asset>(assets) { usdt };
         foreach (var asset in allAssets)
         {
-            if (!networkMap.TryGetValue(asset.Symbol, out var networks)) continue;
-            foreach (var (network, address) in networks)
+            if (asset.Symbol == "USDT")
             {
-                db.CryptoAddresses.Add(new CryptoAddress
-                {
-                    UserId = userId,
-                    AssetId = asset.Id,
-                    Network = network,
-                    Address = address
-                });
+                db.CryptoAddresses.Add(new CryptoAddress { UserId = userId, AssetId = asset.Id, Network = "TRC20", Address = NewTrc() });
+                db.CryptoAddresses.Add(new CryptoAddress { UserId = userId, AssetId = asset.Id, Network = "ERC20", Address = NewEvm() });
+                db.CryptoAddresses.Add(new CryptoAddress { UserId = userId, AssetId = asset.Id, Network = "SOL", Address = NewSol() });
+                continue;
             }
+
+            var (network, address) = asset.Symbol switch
+            {
+                "BTC" => ("BTC", NewBtc()),
+                "ETH" => ("ERC20", NewEvm()),
+                "SOL" => ("SOL", NewSol()),
+                "BNB" => ("BEP20", NewEvm()),
+                "XRP" => ("XRP", "r" + GenerateBase58Chars(33)),
+                "TON" => ("TON", NewTon()),
+                "DOGE" => ("DOGE", "D" + GenerateBase58Chars(33)),
+                "ADA" => ("ADA", "addr1" + GenerateBase58Chars(53)),
+                "AVAX" => ("ERC20", NewEvm()),
+                "LINK" => ("ERC20", NewEvm()),
+                "DOT" => ("DOT", "1" + GenerateBase58Chars(46)),
+                "LTC" => ("LTC", "ltc1" + GenerateBase58Chars(38)),
+                "TRX" => ("TRC20", NewTrc()),
+                "NEAR" => ("NEAR", GenerateBase58Chars(44) + ".near"),
+                "SUI" => ("SUI", "0x" + Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLower()),
+                "ARB" => ("ARB", NewEvm()),
+                "OP" => ("OP", NewEvm()),
+                "PEPE" => ("ERC20", NewEvm()),
+                "UNI" => ("ERC20", NewEvm()),
+                "ATOM" => ("ATOM", "cosmos1" + GenerateBase58Chars(38)),
+                "APT" => ("APT", "0x" + Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLower()),
+                "SHIB" => ("ERC20", NewEvm()),
+                "WIF" => ("SOL", NewSol()),
+                "RENDER" => ("ERC20", NewEvm()),
+                "NOT" => ("TON", NewTon()),
+                _ => ("ERC20", NewEvm())
+            };
+
+            db.CryptoAddresses.Add(new CryptoAddress
+            {
+                UserId = userId,
+                AssetId = asset.Id,
+                Network = network,
+                Address = address
+            });
         }
     }
 

@@ -149,26 +149,50 @@ public class BybitWebSocketService : BackgroundService
         }
     }
 
+    private static decimal ParseDecimal(JsonElement el, string key)
+    {
+        if (!el.TryGetProperty(key, out var prop)) return 0;
+        if (prop.ValueKind == JsonValueKind.Number) return prop.GetDecimal();
+        if (prop.ValueKind == JsonValueKind.String &&
+            decimal.TryParse(prop.GetString(), System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var val))
+            return val;
+        return 0;
+    }
+
+    private static long ParseLong(JsonElement el, string key)
+    {
+        if (!el.TryGetProperty(key, out var prop)) return 0;
+        if (prop.ValueKind == JsonValueKind.Number) return prop.GetInt64();
+        if (prop.ValueKind == JsonValueKind.String &&
+            long.TryParse(prop.GetString(), out var val))
+            return val;
+        return 0;
+    }
+
+    private static string ParseString(JsonElement el, string key, string defaultVal = "")
+    {
+        if (!el.TryGetProperty(key, out var prop)) return defaultVal;
+        if (prop.ValueKind == JsonValueKind.String) return prop.GetString() ?? defaultVal;
+        return prop.ToString() ?? defaultVal;
+    }
+
     private void ProcessTicker(JsonElement root)
     {
         if (!root.TryGetProperty("data", out var data)) return;
-        var symbol = data.TryGetProperty("symbol", out var s) ? s.GetString() ?? "" : "";
+        var symbol = ParseString(data, "symbol");
         if (string.IsNullOrEmpty(symbol)) return;
-
-        decimal Parse(string key) => data.TryGetProperty(key, out var v) &&
-            decimal.TryParse(v.GetString(), System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var r) ? r : 0;
 
         var ticker = new TickerData(
             symbol,
-            Parse("lastPrice"),
-            Parse("price24hPcnt") * 100,
-            Parse("highPrice24h"),
-            Parse("lowPrice24h"),
-            Parse("volume24h"),
-            Parse("turnover24h"),
-            Parse("bid1Price"),
-            Parse("ask1Price"),
+            ParseDecimal(data, "lastPrice"),
+            ParseDecimal(data, "price24hPcnt") * 100,
+            ParseDecimal(data, "highPrice24h"),
+            ParseDecimal(data, "lowPrice24h"),
+            ParseDecimal(data, "volume24h"),
+            ParseDecimal(data, "turnover24h"),
+            ParseDecimal(data, "bid1Price"),
+            ParseDecimal(data, "ask1Price"),
             DateTime.UtcNow);
 
         _priceCache.UpdateFullTicker(ticker);
@@ -179,18 +203,16 @@ public class BybitWebSocketService : BackgroundService
     {
         var symbol = topic.Replace("publicTrade.", "");
         if (!root.TryGetProperty("data", out var dataArray)) return;
+        if (dataArray.ValueKind != JsonValueKind.Array) return;
+
         foreach (var item in dataArray.EnumerateArray())
         {
-            var side = item.TryGetProperty("S", out var sv) ? sv.GetString() ?? "Buy" : "Buy";
-            decimal.TryParse(item.TryGetProperty("p", out var pv) ? pv.GetString() : "0",
-                System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var price);
-            decimal.TryParse(item.TryGetProperty("v", out var vv) ? vv.GetString() : "0",
-                System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var qty);
-            long.TryParse(item.TryGetProperty("T", out var tv) ? tv.GetString() : "0", out var ts);
+            var side = ParseString(item, "S", "Buy");
+            var price = ParseDecimal(item, "p");
+            var qty = ParseDecimal(item, "v");
+            var ts = ParseLong(item, "T");
 
-            var trade = new MarketTradeDto(symbol, price, qty, side, ts / 1000);
+            var trade = new MarketTradeDto(symbol, price, qty, side, ts > 0 ? ts / 1000 : DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             TradeOccurred?.Invoke(symbol, trade);
         }
     }
