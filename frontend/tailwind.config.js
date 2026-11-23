@@ -8,34 +8,37 @@ export default {
     extend: {
       colors: {
         bg: {
-          primary: '#080A0D',
-          secondary: '#0B0E11',
-          card: '#111419',
-          panel: '#151921',
-          hover: '#1a1f29',
+          primary: '#0B0E14',     // Deep obsidian black (Binance/Bybit Pro)
+          secondary: '#11151F',   // Sub-panels & toolbars
+          card: '#161B26',        // Elevated cards & widgets
+          panel: '#1C2230',       // Inputs & inner containers
+          hover: '#242C3D',       // High-contrast clean hover
         },
         border: {
-          subtle: '#1E232B',
-          DEFAULT: '#1E232B',
-          focus: '#2d3542',
+          subtle: '#222938',
+          DEFAULT: '#222938',     // High-tech crisp dark slate borders
+          focus: '#364156',
         },
         text: {
-          primary: '#EAECEF',
-          secondary: '#7B8494',
-          muted: '#4E5564',
+          primary: '#F0F3F8',     // High-contrast clean white
+          secondary: '#8C96A8',   // Crisp slate secondary
+          muted: '#5A6475',       // De-emphasized labels
         },
         trade: {
-          buy: '#0ECB81',
-          'buy-hover': '#0fb574',
-          'buy-subtle': 'rgba(14, 203, 129, 0.12)',
-          sell: '#F6465D',
-          'sell-hover': '#dc3b50',
-          'sell-subtle': 'rgba(246, 70, 93, 0.12)',
+          buy: '#0ECB81',         // Vibrant emerald green
+          'buy-hover': '#00B272',
+          'buy-subtle': 'rgba(14, 203, 129, 0.15)',
+          sell: '#F6465D',        // Punchy crimson red
+          'sell-hover': '#E0364C',
+          'sell-subtle': 'rgba(246, 70, 93, 0.15)',
         },
         accent: {
-          gold: '#F0B90B',
-          'gold-hover': '#d9a70a',
-          white: '#F8FAFC',
+          gold: '#F0B90B',        // Premium Binance/Bybit VIP gold
+          'gold-hover': '#D9A407',
+          'gold-subtle': 'rgba(240, 185, 11, 0.15)',
+          white: '#FFFFFF',
+          cyan: '#00D8F6',
+          purple: '#9B51E0',
         }
       },
       fontFamily: {

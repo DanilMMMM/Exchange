@@ -16,51 +16,51 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ mode }) => {
   const [selectedBookPrice, setSelectedBookPrice] = useState<number | null>(null);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3rem)] overflow-hidden bg-bg-primary">
-      {/* 24h Market Banner */}
+    <div className="flex flex-col h-[calc(100vh-3rem)] w-full overflow-hidden bg-bg-primary">
+      {/* Top 24h Market Banner */}
       <MarketHeader mode={mode} />
 
-      {/* Main 3-column Trading Grid */}
-      <div className="flex-1 grid grid-cols-12 overflow-hidden">
-        {/* Left Column: Chart & Bottom Tabs (Col 1 to 7 on lg/xl) */}
-        <div className="col-span-12 lg:col-span-6 xl:col-span-7 flex flex-col h-full border-r border-border overflow-hidden">
+      {/* Main 3-column Pro Trading Terminal Grid */}
+      <div className="flex-1 flex w-full overflow-hidden min-h-0">
+        {/* Column 1: Chart & Bottom Tabs (Flex-1 expands to fill all remaining space!) */}
+        <div className="flex-1 flex flex-col min-w-0 h-full border-r border-border overflow-hidden">
           {/* Chart Section */}
-          <div className="flex-1 min-h-[300px] relative overflow-hidden border-b border-border">
+          <div className="flex-1 min-h-[350px] relative overflow-hidden">
             <TradingChart />
           </div>
 
           {/* Bottom Positions & Orders Panel */}
-          <div className="h-64 min-h-[220px] bg-bg-card overflow-hidden">
+          <div className="h-72 min-h-[220px] bg-bg-card border-t border-border overflow-hidden">
             <PositionsAndOrders mode={mode} />
           </div>
         </div>
 
-        {/* Center-Right Column: Order Book & Trades (Col 8 to 9 on xl) */}
-        <div className="hidden lg:flex col-span-3 xl:col-span-2.5 flex-col h-full bg-bg-card border-r border-border overflow-hidden">
+        {/* Column 2: Order Book & Trades (Fixed 300px - 340px) */}
+        <div className="w-72 xl:w-80 shrink-0 flex flex-col h-full bg-bg-card border-r border-border overflow-hidden">
           {/* Tab switch */}
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-bg-secondary text-xs">
             <div className="flex space-x-1">
               <button
                 onClick={() => setRightTab('book')}
-                className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-semibold transition-all ${
                   rightTab === 'book'
                     ? 'bg-bg-panel text-accent-gold border border-border shadow-sm'
                     : 'text-text-muted hover:text-text-primary'
                 }`}
               >
-                <BookOpen className="w-3 h-3" />
+                <BookOpen className="w-3.5 h-3.5" />
                 <span>Order Book</span>
               </button>
               <button
                 onClick={() => setRightTab('trades')}
-                className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-semibold transition-all ${
                   rightTab === 'trades'
                     ? 'bg-bg-panel text-accent-gold border border-border shadow-sm'
                     : 'text-text-muted hover:text-text-primary'
                 }`}
               >
-                <Activity className="w-3 h-3" />
-                <span>Trades</span>
+                <Activity className="w-3.5 h-3.5" />
+                <span>Recent Trades</span>
               </button>
             </div>
           </div>
@@ -74,8 +74,8 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ mode }) => {
           </div>
         </div>
 
-        {/* Right Column: Order Placement Form (Col 10 to 12) */}
-        <div className="col-span-12 lg:col-span-3 xl:col-span-2.5 flex flex-col h-full bg-bg-card overflow-y-auto">
+        {/* Column 3: Order Placement Form (Fixed 300px - 340px) */}
+        <div className="w-72 xl:w-80 shrink-0 flex flex-col h-full bg-bg-card overflow-y-auto">
           <OrderForm mode={mode} selectedPrice={selectedBookPrice} />
         </div>
       </div>
