@@ -289,7 +289,7 @@ ON CONFLICT (symbol) DO NOTHING;
 -- ============================================================
 -- 13. SEEDING — TRADING PAIRS (25 пар к USDT)
 -- ============================================================
-INSERT INTO trading_pairs (symbol, base_asset_id, quote_asset_id, min_qty, step_size, min_notional, precision_price, precision_qty)
+INSERT INTO trading_pairs (symbol, base_asset_id, quote_asset_id, min_qty, step_size, min_notional)
 SELECT
     a.symbol || 'USDT',
     a.id,
@@ -327,9 +327,7 @@ SELECT
         WHEN 'ETH'    THEN 0.00001
         ELSE 0.001
     END,
-    1,  -- min_notional 1 USDT
-    a.precision_price,
-    a.precision_qty
+    1  -- min_notional 1 USDT
 FROM assets a, assets u
 WHERE a.symbol != 'USDT'
   AND u.symbol  = 'USDT'
